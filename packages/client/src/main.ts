@@ -282,20 +282,18 @@ class FlyffGame {
     this.raycaster.setFromCamera(this.mouse, this.scene.camera);
 
     // 1. Check if an entity was clicked
-    const entityGroups = Array.from(this.entities.values()).map((ent) => ent.group);
-    const intersects = this.raycaster.intersectObjects(entityGroups, true);
-
-    if (intersects.length > 0) {
-      let topMesh: THREE.Object3D | null = intersects[0].object;
-      while (topMesh && topMesh.parent && topMesh.parent !== this.scene.scene) {
-        for (const ent of this.entities.values()) {
-          if (ent.group === topMesh.parent) {
-            this.selectEntity(ent);
-            return;
-          }
-        }
-        topMesh = topMesh.parent;
+    let clickedEntity: Entity | null = null;
+    for (const ent of this.entities.values()) {
+      const hits = this.raycaster.intersectObjects(ent.group.children, true);
+      if (hits.length > 0) {
+        clickedEntity = ent;
+        break;
       }
+    }
+
+    if (clickedEntity) {
+      this.selectEntity(clickedEntity);
+      return;
     }
 
     // 2. Otherwise raycast onto ground plane for Click-to-Move
