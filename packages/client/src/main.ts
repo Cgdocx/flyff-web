@@ -4,12 +4,18 @@ import { FlyffHUD } from './ui/hud';
 import { Entity } from './entities/character';
 import { NetworkClient } from './network/client';
 import { Opcode, EntitySpawnData, PlayerStats } from './network/protocol';
+import { InventorySystem } from './systems/inventory';
+import { WindowManager } from './ui/windows';
+import { FlightSystem } from './systems/flight';
 
 class FlyffGame {
   private container: HTMLElement;
   private scene: WorldScene;
   private hud: FlyffHUD;
   private network: NetworkClient;
+  private inventory: InventorySystem;
+  private windowManager: WindowManager;
+  private flightSystem: FlightSystem;
 
   private entities = new Map<string, Entity>();
   private localPlayer!: Entity;
@@ -44,9 +50,13 @@ class FlyffGame {
     this.scene = new WorldScene(this.container);
     this.hud = new FlyffHUD(this.container);
     this.network = new NetworkClient();
+    this.inventory = new InventorySystem();
+    this.flightSystem = new FlightSystem();
+    this.windowManager = new WindowManager(this.container, this.inventory, this.playerStats);
 
     this.initPlayer();
     this.setupHUDCallbacks();
+    this.setupWindowCallbacks();
     this.setupInputHandlers();
     this.setupNetworkHandlers();
     this.spawnDemoEntities();
@@ -77,6 +87,11 @@ class FlyffGame {
     };
 
     this.localPlayer = new Entity(spawnData);
+    if (this.flightSystem.mountMesh) {
+      this.flightSystem.mountMesh.position.y = 0.5;
+      this.localPlayer.group.add(this.flightSystem.mountMesh);
+    }
+
     this.scene.scene.add(this.localPlayer.group);
     this.hud.updatePlayerStats(this.playerStats);
   }
@@ -93,6 +108,44 @@ class FlyffGame {
         this.attackSelectedTarget();
       }
     });
+  }
+
+  private setupWindowCallbacks(): void {
+    this.windowManager.setCallbacks({
+      onUseItem: (item, slotIndex) => {
+        if (item.type === 'consumable') {
+          if (item.healHp) {
+            this.playerStats.hp = Math.min(this.playerStats.maxHp, this.playerStats.hp + item.healHp);
+            this.hud.addChatMessage('System', `Used ${item.name}! (+${item.healHp} HP)`, 'system');
+          }
+          if (item.healMp) {
+            this.playerStats.mp = Math.min(this.playerStats.maxMp, this.playerStats.mp + item.healMp);
+            this.hud.addChatMessage('System', `Used ${item.name}! (+${item.healMp} MP)`, 'system');
+          }
+          if (item.healFp) {
+            this.playerStats.fp = Math.min(this.playerStats.maxFp, this.playerStats.fp + item.healFp);
+            this.hud.addChatMessage('System', `Used ${item.name}! (+${item.healFp} FP)`, 'system');
+          }
+          this.inventory.removeItem(slotIndex, 1);
+          this.hud.updatePlayerStats(this.playerStats);
+          this.windowManager.updateStats(this.playerStats);
+        } else if (item.type === 'flying') {
+          this.toggleFlightMode();
+        }
+      },
+      onStatPointAllocated: (stat) => {
+        this.hud.addChatMessage('System', `Increased ${stat.toUpperCase()}!`, 'system');
+      }
+    });
+  }
+
+  private toggleFlightMode(): void {
+    const isFlying = this.flightSystem.toggleFlight();
+    if (isFlying) {
+      this.hud.addChatMessage('System', 'Mounted flying vehicle! Press Space to ascend, Shift to descend.', 'system');
+    } else {
+      this.hud.addChatMessage('System', 'Landed back onto the ground.', 'system');
+    }
   }
 
   private attackSelectedTarget(): void {
@@ -201,12 +254,23 @@ class FlyffGame {
 
     // Keyboard Shortcuts (WASD Movement & Attack slot 1)
     window.addEventListener('keydown', (e) => {
+      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+
       if (e.key === '1') {
         this.attackSelectedTarget();
+      } else if (e.key === '4') {
+        this.toggleFlightMode();
       } else if (e.key === 'Tab') {
         e.preventDefault();
-        // Cycle closest monster
         this.selectNearestMonster();
+      } else if (e.key === ' ') {
+        if (this.flightSystem.isFlying) {
+          this.flightSystem.adjustAltitude(1.5);
+        }
+      } else if (e.key === 'Shift') {
+        if (this.flightSystem.isFlying) {
+          this.flightSystem.adjustAltitude(-1.5);
+        }
       }
     });
   }
@@ -342,10 +406,13 @@ class FlyffGame {
 
     const delta = this.clock.getDelta();
 
-    // 1. Update Local Player
+    // 1. Update Flight Dynamics
+    this.flightSystem.update(delta, this.localPlayer.group.position);
+
+    // 2. Update Local Player
     this.localPlayer.update(delta);
 
-    // 2. Camera follows Local Player
+    // 3. Camera follows Local Player
     this.scene.cameraTarget.copy(this.localPlayer.group.position).add(new THREE.Vector3(0, 1.4, 0));
     this.scene.updateCameraPosition();
 
