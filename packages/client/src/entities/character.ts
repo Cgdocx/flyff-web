@@ -14,6 +14,7 @@ export class Entity {
 
   private targetPosition: THREE.Vector3;
   private nameplateSprite: THREE.Sprite;
+  public moveSpeed = 6.5; // FlyFF movement speed in units/sec
 
   constructor(data: EntitySpawnData) {
     this.id = data.id;
@@ -193,15 +194,24 @@ export class Entity {
   }
 
   public update(delta: number): void {
-    // Smooth position interpolation
-    if (this.group.position.distanceTo(this.targetPosition) > 0.05) {
-      this.group.position.lerp(this.targetPosition, Math.min(1.0, delta * 8));
+    // Distance check to target position (ignore Y for ground movement calculation)
+    const currentFlat = new THREE.Vector2(this.group.position.x, this.group.position.z);
+    const targetFlat = new THREE.Vector2(this.targetPosition.x, this.targetPosition.z);
+    const dist = currentFlat.distanceTo(targetFlat);
 
-      // Bobbing animation while walking
-      const speed = this.group.position.distanceTo(this.targetPosition);
-      if (speed > 0.1) {
-        this.group.position.y = this.targetPosition.y + Math.abs(Math.sin(Date.now() * 0.015)) * 0.15;
-      }
+    if (dist > 0.05) {
+      // Step based on constant moveSpeed and delta time
+      const step = Math.min(dist, this.moveSpeed * delta);
+      const dirX = (this.targetPosition.x - this.group.position.x) / dist;
+      const dirZ = (this.targetPosition.z - this.group.position.z) / dist;
+
+      this.group.position.x += dirX * step;
+      this.group.position.z += dirZ * step;
+
+      // Bobbing walking animation
+      this.group.position.y = this.targetPosition.y + Math.abs(Math.sin(Date.now() * 0.015)) * 0.12;
+    } else {
+      this.group.position.y = THREE.MathUtils.lerp(this.group.position.y, this.targetPosition.y, delta * 10);
     }
   }
 }

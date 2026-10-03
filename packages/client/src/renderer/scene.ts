@@ -74,6 +74,7 @@ export class WorldScene {
     });
 
     const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+    groundMesh.name = 'groundPlane';
     groundMesh.receiveShadow = true;
     this.scene.add(groundMesh);
 

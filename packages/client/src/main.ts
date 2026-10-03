@@ -38,7 +38,8 @@ class FlyffGame {
     penya: 500
   };
 
-  // Input & Interaction
+  // Input & Interaction Keys
+  private keysPressed: { [key: string]: boolean } = {};
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private isRightMouseDown = false;
@@ -252,8 +253,9 @@ class FlyffGame {
       this.scene.updateCameraPosition();
     });
 
-    // Keyboard Shortcuts (WASD Movement & Attack slot 1)
+    // Keyboard Shortcuts & Continuous WASD tracking
     window.addEventListener('keydown', (e) => {
+      this.keysPressed[e.key.toLowerCase()] = true;
       if ((e.target as HTMLElement).tagName === 'INPUT') return;
 
       if (e.key === '1') {
@@ -272,6 +274,10 @@ class FlyffGame {
           this.flightSystem.adjustAltitude(-1.5);
         }
       }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      this.keysPressed[e.key.toLowerCase()] = false;
     });
   }
 
@@ -297,9 +303,9 @@ class FlyffGame {
     }
 
     // 2. Otherwise raycast onto ground plane for Click-to-Move
-    const groundHits = this.raycaster.intersectObjects(this.scene.scene.children, false);
+    const groundHits = this.raycaster.intersectObjects(this.scene.scene.children, true);
     for (const hit of groundHits) {
-      if (hit.point) {
+      if (hit.point && (hit.object.name === 'groundPlane' || hit.point.y < 0.2)) {
         const dest = hit.point;
         this.localPlayer.setMoveTarget({ x: dest.x, y: 0, z: dest.z });
 
@@ -399,10 +405,42 @@ class FlyffGame {
     });
   }
 
+  private handleKeyboardMovement(delta: number): void {
+    let moveForward = 0;
+    let turn = 0;
+
+    if (this.keysPressed['w'] || this.keysPressed['arrowup']) moveForward += 1;
+    if (this.keysPressed['s'] || this.keysPressed['arrowdown']) moveForward -= 1;
+    if (this.keysPressed['a'] || this.keysPressed['arrowleft']) turn += 1;
+    if (this.keysPressed['d'] || this.keysPressed['arrowright']) turn -= 1;
+
+    if (turn !== 0) {
+      this.localPlayer.group.rotation.y += turn * delta * 3.2;
+    }
+
+    if (moveForward !== 0) {
+      const angle = this.localPlayer.group.rotation.y;
+      const speed = this.flightSystem.isFlying ? this.flightSystem.flightSpeed : this.localPlayer.moveSpeed;
+      const distance = moveForward * speed * delta;
+
+      const newX = this.localPlayer.group.position.x + Math.sin(angle) * distance;
+      const newZ = this.localPlayer.group.position.z + Math.cos(angle) * distance;
+
+      this.localPlayer.setMoveTarget({ x: newX, y: this.localPlayer.group.position.y, z: newZ }, angle);
+
+      if (this.network.isConnected) {
+        this.network.sendMove({ x: newX, y: this.localPlayer.group.position.y, z: newZ }, angle);
+      }
+    }
+  }
+
   private gameLoop(): void {
     requestAnimationFrame(this.gameLoop.bind(this));
 
     const delta = this.clock.getDelta();
+
+    // 0. Handle Keyboard WASD direct movement (Classic FlyFF style)
+    this.handleKeyboardMovement(delta);
 
     // 1. Update Flight Dynamics
     this.flightSystem.update(delta, this.localPlayer.group.position);
