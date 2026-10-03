@@ -7,6 +7,7 @@ import { Opcode, EntitySpawnData, PlayerStats } from './network/protocol';
 import { InventorySystem } from './systems/inventory';
 import { WindowManager } from './ui/windows';
 import { FlightSystem } from './systems/flight';
+import { TouchController } from './ui/touch';
 
 class FlyffGame {
   private container: HTMLElement;
@@ -16,6 +17,7 @@ class FlyffGame {
   private inventory: InventorySystem;
   private windowManager: WindowManager;
   private flightSystem: FlightSystem;
+  private touchController: TouchController;
 
   private entities = new Map<string, Entity>();
   private localPlayer!: Entity;
@@ -54,10 +56,12 @@ class FlyffGame {
     this.inventory = new InventorySystem();
     this.flightSystem = new FlightSystem();
     this.windowManager = new WindowManager(this.container, this.inventory, this.playerStats);
+    this.touchController = new TouchController(this.container);
 
     this.initPlayer();
     this.setupHUDCallbacks();
     this.setupWindowCallbacks();
+    this.setupTouchCallbacks();
     this.setupInputHandlers();
     this.setupNetworkHandlers();
     this.spawnDemoEntities();
@@ -137,6 +141,16 @@ class FlyffGame {
       onStatPointAllocated: (stat) => {
         this.hud.addChatMessage('System', `Increased ${stat.toUpperCase()}!`, 'system');
       }
+    });
+  }
+
+  private setupTouchCallbacks(): void {
+    this.touchController.setCallbacks({
+      onAttack: () => this.attackSelectedTarget(),
+      onFly: () => this.toggleFlightMode(),
+      onTab: () => this.selectNearestMonster(),
+      onToggleInv: () => this.windowManager.toggleWindow('inventory'),
+      onToggleStat: () => this.windowManager.toggleWindow('status')
     });
   }
 
@@ -232,6 +246,43 @@ class FlyffGame {
     window.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // Mouse Move (Camera Orbit)
+    // Touch Camera Orbit Dragging (Single touch outside controls)
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isTouchingScreen = false;
+
+    window.addEventListener('touchstart', (e) => {
+      if ((e.target as HTMLElement).closest('.hud-interactive') || 
+          (e.target as HTMLElement).closest('.flyff-win') ||
+          (e.target as HTMLElement).closest('.mobile-touch-interactive')) {
+        return;
+      }
+      if (e.touches.length === 1) {
+        isTouchingScreen = true;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isTouchingScreen && e.touches.length === 1) {
+        const deltaX = e.touches[0].clientX - touchStartX;
+        const deltaY = e.touches[0].clientY - touchStartY;
+
+        this.scene.cameraYaw -= deltaX * 0.007;
+        this.scene.cameraPitch += deltaY * 0.007;
+        this.scene.cameraPitch = Math.max(0.05, Math.min(Math.PI / 2.2, this.scene.cameraPitch));
+
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        this.scene.updateCameraPosition();
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => {
+      isTouchingScreen = false;
+    });
+
     window.addEventListener('mousemove', (e) => {
       if (this.isRightMouseDown) {
         const deltaX = e.clientX - this.previousMousePosition.x;
@@ -408,6 +459,13 @@ class FlyffGame {
   private handleKeyboardMovement(delta: number): void {
     let moveForward = 0;
     let turn = 0;
+
+    // Check virtual touch joystick
+    const joy = this.touchController.joystickOutput;
+    if (joy.isActive) {
+      moveForward += joy.moveY;
+      turn -= joy.moveX; // Left-Right rotation
+    }
 
     if (this.keysPressed['w'] || this.keysPressed['arrowup']) moveForward += 1;
     if (this.keysPressed['s'] || this.keysPressed['arrowdown']) moveForward -= 1;
