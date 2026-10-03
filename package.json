@@ -1,0 +1,28 @@
+{
+  "name": "flyff-web",
+  "version": "0.1.0",
+  "description": "FlyFF Web Client & WebSocket Gateway — Modern HTML5/WebGL browser client for FlyFF",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/client",
+    "dev:gateway": "npm run dev --workspace=packages/gateway",
+    "build": "npm run build --workspaces",
+    "build:client": "npm run build --workspace=packages/client",
+    "build:gateway": "npm run build --workspace=packages/gateway",
+    "start:gateway": "npm run start --workspace=packages/gateway"
+  },
+  "keywords": [
+    "flyff",
+    "webgl",
+    "threejs",
+    "mmorpg",
+    "flyff-universe",
+    "websocket",
+    "typescript"
+  ],
+  "author": "Cgdocx",
+  "license": "MIT"
+}
